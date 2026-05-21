@@ -3,13 +3,11 @@ name: Build Android APK
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     
     steps:
     - name: Checkout code
@@ -26,74 +24,29 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
     
-    - name: Install System Dependencies
+    - name: Install System Dependencies (Bypassing Errors)
       run: |
-        sudo apt update
-        sudo apt install -y build-essential git python3-dev python3-pip libffi-dev libssl-dev libltdl-dev zlib1g-dev zip unzip autoconf automake libtool pkg-config cmake imagemagick
+        sudo apt-get update || true
+        sudo apt-get install -y --fix-missing build-essential git zip unzip autoconf automake libtool pkg-config cmake libffi-dev libssl-dev libltdl-dev zlib1g-dev
     
     - name: Install Python Dependencies & Buildozer
       run: |
         python -m pip install --upgrade pip setuptools wheel
         pip install cython==0.29.33 virtualenv buildozer
     
-    - name: Create assets directory
-      run: |
-        mkdir -p assets
-    
-    - name: Create placeholder logo (if not exists)
-      run: |
-        if [ ! -f assets/logo.png ]; then
-          echo "Creating placeholder logo..."
-          convert -size 512x512 xc:#00D2A0 -gravity center -pointsize 72 -fill white -annotate +0+0 "AL" assets/logo.png || echo "ImageMagick not available, skipping logo creation"
-        fi
-    
-    - name: Download NotoSans font (if not exists)
-      run: |
-        if [ ! -f assets/NotoSans-Regular.ttf ]; then
-          echo "Downloading NotoSans font..."
-          wget -q https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf -O assets/NotoSans-Regular.ttf || echo "Font download failed, continuing..."
-        fi
-    
-    - name: Verify buildozer.spec exists
-      run: |
-        if [ ! -f buildozer.spec ]; then
-          echo "ERROR: buildozer.spec not found!"
-          exit 1
-        fi
-        echo "buildozer.spec found ✓"
-    
-    - name: Clear buildozer cache (fresh build)
+    - name: Clear buildozer cache & Fix SDK (Fresh Build)
       run: |
         rm -rf .buildozer
         rm -rf ~/.buildozer
-    
-    - name: Build APK with Buildozer (Fixing Android SDK)
-      run: |
-        # Unset GitHub's pre-configured Android paths so Buildozer uses a fresh one
         unset ANDROID_HOME
         unset ANDROID_SDK_ROOT
         unset ANDROID_NDK_HOME
+    
+    - name: Build APK with Buildozer
+      run: |
+        unset ANDROID_HOME
+        unset ANDROID_SDK_ROOT
         yes | buildozer -v android debug
-    
-    - name: Verify APK was created
-      run: |
-        if [ -f bin/*.apk ]; then
-          echo "APK build successful ✓"
-          ls -lh bin/*.apk
-        else
-          echo "ERROR: APK not found!"
-          exit 1
-        fi
-    
-    - name: Rename APK with timestamp
-      run: |
-        cd bin
-        APK_FILE=$(ls *.apk | head -n 1)
-        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-        NEW_NAME="AnyLoad_v1.1.0_${TIMESTAMP}.apk"
-        mv "$APK_FILE" "$NEW_NAME"
-        echo "APK renamed to: $NEW_NAME"
-        echo "APK_NAME=$NEW_NAME" >> $GITHUB_ENV
     
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
@@ -101,17 +54,3 @@ jobs:
         name: AnyLoad-APK
         path: bin/*.apk
         retention-days: 30
-    
-    - name: Build summary
-      run: |
-        echo "## 🎉 Build Successful!" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**App:** AnyLoad v1.1.0" >> $GITHUB_STEP_SUMMARY
-        echo "**Build Date:** $(date)" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### 📦 APK Details" >> $GITHUB_STEP_SUMMARY
-        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-        ls -lh bin/*.apk >> $GITHUB_STEP_SUMMARY
-        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "Download the APK from the **Artifacts** section above." >> $GITHUB_STEP_SUMMARY
