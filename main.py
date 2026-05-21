@@ -1,753 +1,1391 @@
 # -*- coding: utf-8 -*-
+# ═══════════════════════════════════════════════════════════════════════════
+# ANYLOAD V1.1 - ELITE PRODUCTION BUILD
+# ═══════════════════════════════════════════════════════════════════════════
+# CRITICAL: Graphics fix MUST be first line
 import os
-import sys
-
-# Graphics fix for 32-bit devices
 os.environ['KIVY_GRAPHICS'] = 'sdl2'
 
-import subprocess
-import hashlib
+import sys
 import threading
 import re
-from kivy.config import Config
-from kivy.core.text import LabelBase
-from kivymd.app import MDApp
-from kivy.lang import Builder
-from kivymd.uix.card import MDCard
-from kivy.properties import StringProperty, NumericProperty, BooleanProperty, ObjectProperty
-from kivy.core.window import Window
-from kivy.clock import mainthread, Clock
-from kivy.utils import platform
-from kivy.core.clipboard import Clipboard
-from kivy.animation import Animation
-from db.manager import db
-from kivymd.uix.button import MDButton, MDButtonText
-from kivymd.uix.label import MDLabel
-from kivymd.uix.progressindicator import MDLinearProgressIndicator
-from kivymd.uix.fitimage import FitImage
-from kivymd.uix.boxlayout import MDBoxLayout
-from utils.storage import StorageManager
-from utils.permissions import PermissionHandler
-from downloader import DownloadManager
-from features.audio_trimmer import AudioTrimmer
-from features.vault_manager import VaultManager
-from kivymd.uix.dialog import MDDialog
-from kivymd.uix.textfield import MDTextField
-from kivy.uix.modalview import ModalView
-from kivymd.uix.scrollview import MDScrollView
-from mutagen.mp3 import MP3
-from mutagen.id3 import ID3
+from pathlib import Path
+from datetime import datetime
 
-# ১. Kivy-কে UTF-8 এবং ইউনিকোড হ্যান্ডেল করতে বাধ্য করা
+# Kivy Core
+from kivy.config import Config
 Config.set('kivy', 'text_resource_encoding', 'utf-8')
 
+from kivy.lang import Builder
+from kivy.clock import Clock, mainthread
+from kivy.core.window import Window
+from kivy.core.text import LabelBase
+from kivy.core.clipboard import Clipboard
+from kivy.animation import Animation
+from kivy.properties import StringProperty, NumericProperty, BooleanProperty, ListProperty, ObjectProperty
+from kivy.utils import platform
+
+# KivyMD (STRICTLY v1.2.0)
+from kivymd.app import MDApp
+from kivymd.uix.card import MDCard
+from kivymd.uix.button import MDIconButton
+from kivymd.uix.label import MDLabel
+from kivymd.uix.dialog import MDDialog
+from kivymd.uix.button import MDFlatButton
+from kivymd.uix.textfield import MDTextField
+from kivymd.toast import toast as kivymd_toast
+
+# App modules
+from downloader import DownloadEngine, ThumbnailDownloader
+from database import get_database
+
+# Desktop testing
 Window.size = (360, 800)
 
+# ═══════════════════════════════════════════════════════════════════════════
+# UNIVERSAL FONT REGISTRATION (NO TOFU)
+# ═══════════════════════════════════════════════════════════════════════════
 def register_universal_font():
-    # ইউনিকোড সাপোর্ট করে এমন ফন্ট পাথ (আপনার পিসিতে bangla.ttf ই যথেষ্ট)
-    font_path = os.path.join(os.path.dirname(__file__), "assets", "bangla.ttf")
-    
-    if os.path.exists(font_path):
-        # Kivy-র ডিফল্ট 'Roboto' ফ্যামিলিকে আমাদের ইউনিকোড ফন্ট দিয়ে ওভাররাইড করা
-        # এতে করে অ্যাপের যেখানেই 'Roboto' কল হবে, সেখানে আমাদের ফন্ট কাজ করবে
-        LabelBase.register(name='Roboto', 
-                           fn_regular=font_path,
-                           fn_bold=font_path,
-                           fn_italic=font_path,
-                           fn_bolditalic=font_path)
-        print(f"[*] Unicode Font Registered Successfully: {font_path}")
+    """Register NotoSans to support Bengali, Arabic, Japanese, etc."""
+    font_path = Path(__file__).parent / "assets" / "NotoSans-Regular.ttf"
+    if font_path.exists():
+        LabelBase.register(
+            name='Roboto',
+            fn_regular=str(font_path),
+            fn_bold=str(font_path),
+            fn_italic=str(font_path),
+            fn_bolditalic=str(font_path)
+        )
+        print(f"[✓] Universal Font Loaded: {font_path}")
     else:
-        print("[!] Warning: assets/bangla.ttf not found. Bengali might break.")
+        print("[!] Warning: NotoSans-Regular.ttf not found. Unicode may break.")
 
 register_universal_font()
 
-class ThumbnailGenerator:
-    @staticmethod
-    def generate(video_path):
-        # FFmpeg removed - using default thumbnail
-        return "assets/default_vedio.png"
 
-    @staticmethod
-    def get_audio_thumb(audio_path):
-        """অডিও ফাইল থেকে কভার ছবি (APIC) বের করার ফাংশন"""
-        thumbnail_dir = StorageManager.get_thumbnail_path()
-        os.makedirs(thumbnail_dir, exist_ok=True)
-        filename = hashlib.md5(audio_path.encode()).hexdigest() + "_audio.jpg"
-        thumbnail_path = os.path.join(thumbnail_dir, filename)
-
-        if not os.path.exists(thumbnail_path):
-            try:
-                from mutagen.mp3 import MP3
-                from mutagen.id3 import ID3
-                
-                audio = MP3(audio_path, ID3=ID3)
-                for tag in audio.tags.values():
-                    if tag.FrameID == 'APIC':
-                        with open(thumbnail_path, 'wb') as img:
-                            img.write(tag.data)
-                        return thumbnail_path
-            except Exception as e:
-                print(f"[!] Audio Thumb Error: {e}")
-                pass
-            # যদি কভার ছবি না পায় বা এক্সট্র্যাক্ট করতে না পারে, তবে ডিফল্ট ছবি দেখাবে
-            return "assets/default_audio.png"
-        return thumbnail_path
-
-class ActionCard(MDCard):
-    title = StringProperty()
-    icon_name = StringProperty()
+# ═══════════════════════════════════════════════════════════════════════════
+# CUSTOM WIDGETS
+# ═══════════════════════════════════════════════════════════════════════════
+class ActionButton(MDCard):
+    """Premium 3D Pill Button with micro-animation"""
+    text = StringProperty("")
+    icon = StringProperty("")
+    
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            anim = Animation(scale_x=0.95, scale_y=0.95, duration=0.1)
+            anim.start(self)
+            return super().on_touch_down(touch)
+        return super().on_touch_down(touch)
+    
+    def on_touch_up(self, touch):
+        if self.collide_point(*touch.pos):
+            anim = Animation(scale_x=1.0, scale_y=1.0, duration=0.1)
+            anim.start(self)
+        return super().on_touch_up(touch)
 
 
 class TaskCard(MDCard):
-    filename = StringProperty("Preparing download...")
-    progress_value = NumericProperty(0)
-    status_text = StringProperty("Preparing download...")
-    total_size = StringProperty("")
+    """Premium 3-Layer Horizontal Task Card"""
+    task_id = StringProperty("")
+    url = StringProperty("")  # For resume
+    mode = StringProperty("")  # For resume
+    filename = StringProperty("Preparing...")
+    thumbnail = StringProperty("assets/logo.png")
+    badge = StringProperty("MP4")  # MP4 or MP3
+    progress = NumericProperty(0)
+    percent_text = StringProperty("0%")
+    speed = StringProperty("-- KB/s")
+    eta = StringProperty("--:--")
+    size_info = StringProperty("0 MB / 0 MB")
+    status = StringProperty("waiting")  # waiting, downloading, paused, completed, failed
+    status_text = StringProperty("WAITING")
+    bottom_row_text = StringProperty("WAITING  •  ETA --:--  •  0 MB / 0 MB")
+    play_pause_icon = StringProperty("pause")
     is_paused = BooleanProperty(False)
-    url = StringProperty("")
-    mode = StringProperty("")
-    manager_ref = ObjectProperty(None, allownone=True)
-    file_type = StringProperty("video")
-
+    downloaded_bytes = NumericProperty(0)
+    total_bytes = NumericProperty(0)
+    
     def toggle_pause(self):
         app = MDApp.get_running_app()
-        if not self.is_paused:
-            if self.manager_ref:
-                self.manager_ref.pause()
-            self.is_paused = True
-            self.status_text = "Paused"
-            self.ids.pause_button.icon = "play"
+        if self.is_paused:
+            app.resume_task(self.task_id)
         else:
-            self.is_paused = False
-            self.status_text = "Downloading..."
-            self.ids.pause_button.icon = "pause"
-            app._start_engine(self)
-
-    def cancel_task(self):
-        if self.manager_ref:
-            self.manager_ref.cancel()
-        MDApp.get_running_app().remove_task(self)
+            app.pause_task(self.task_id)
+    
+    def cancel(self):
+        app = MDApp.get_running_app()
+        app.cancel_task(self.task_id)
 
 
 class LibraryCard(MDCard):
-    filename = StringProperty()
-    thumbnail_path = StringProperty()
-    filepath = StringProperty()
-    file_type = StringProperty("video")
-
-    def on_release(self):
-        self.play_media()
-
+    """Media Library Card with Thumbnail & Play"""
+    filename = StringProperty("")
+    thumbnail = StringProperty("assets/logo.png")
+    filepath = StringProperty("")
+    file_type = StringProperty("video")  # video or audio
+    
     def play_media(self):
-        try:
-            if platform == 'android':
-                from jnius import autoclass, cast
-                StrictMode = autoclass('android.os.StrictMode')
-                StrictMode.setVmPolicy(autoclass('android.os.StrictMode$VmPolicy$Builder')().build())
-                Intent = autoclass('android.content.Intent')
-                Uri = autoclass('android.net.Uri')
-                File = autoclass('java.io.File')
-                PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                intent = Intent(Intent.ACTION_VIEW)
-                uri = Uri.fromFile(File(self.filepath))
-                mime = "video/*" if self.filepath.lower().endswith(('.mp4', '.mkv', '.webm')) else "audio/*"
-                intent.setDataAndType(uri, mime)
-                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                cast('android.app.Activity', PythonActivity.mActivity).startActivity(intent)
-            else:
-                if sys.platform.startswith('linux'):
-                    subprocess.Popen(['xdg-open', self.filepath])
-                elif sys.platform == 'win32':
-                    os.startfile(self.filepath)
-                elif sys.platform == 'darwin':
-                    subprocess.Popen(['open', self.filepath])
-        except Exception as e:
-            print(f"[!] Play Media Error: {e}")
+        """Play media when card is clicked"""
+        app = MDApp.get_running_app()
+        app.play_media(self.filepath)
+    
+    def show_options(self):
+        """Show options menu (called by three-dots button)"""
+        app = MDApp.get_running_app()
+        app.show_file_options(self.filename, self.filepath)
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# MAIN APP CLASS
+# ═══════════════════════════════════════════════════════════════════════════
 class AnyLoadApp(MDApp):
-    current_pin = ""
-    current_action = ""  # "LOGIN" or "MOVING_FILE"
-    pending_file_move = {"filepath": "", "filename": ""}  # ফাইল মুভের জন্য পেন্ডিং ডাটা
-    security_questions = [
-        "What is your favorite color?",
-        "What was the name of your first school?",
-        "Who is your childhood hero?",
-        "What is your mother's maiden name?",
-        "What city were you born in?"
-    ]
-
+    # Active download indicator
+    is_active_download = BooleanProperty(False)
+    dot_text = StringProperty(".")
+    
+    # Queue Management
+    active_tasks = ListProperty([])  # Currently downloading
+    waiting_tasks = ListProperty([])  # Queued
+    max_concurrent = NumericProperty(3)  # From configs
+    
+    # Task engines (task_id -> DownloadEngine)
+    task_engines = {}
+    
+    # Dialog reference
+    about_dialog = ObjectProperty(None)
+    
     def build(self):
-        self._configure_console_encoding()
-        self._register_unicode_font()
-        
+        """Build the app UI"""
         self.theme_cls.theme_style = "Dark"
         self.theme_cls.primary_palette = "Teal"
         self.theme_cls.accent_palette = "Teal"
         
-        self.base_path = StorageManager.setup_folders()
-        os.makedirs("assets", exist_ok=True)
+        # Setup storage
+        self._setup_storage()
         
+        # Load UI
         return Builder.load_file("ui.kv")
-
-    def _configure_console_encoding(self):
-        try:
-            sys.stdout.reconfigure(encoding='utf-8')
-            sys.stderr.reconfigure(encoding='utf-8')
-        except Exception:
-            pass
-
-    def _register_unicode_font(self):
-        pass
-            
+    
     def on_start(self):
-        PermissionHandler.request_all()
-        self.refresh_library()
-        Clock.schedule_once(self.start_animations, 0.5)
-        Clock.schedule_once(self.check_clipboard, 1)
-
-    def on_resume(self):
-        Clock.schedule_once(lambda dt: self.check_clipboard(), 0.4)
-        return True  # Critical: Prevents Android from killing the app
-
+        """Post-build initialization"""
+        # Request permissions after 1 second
+        Clock.schedule_once(self._request_permissions, 1)
+        
+        # Start splash animation (only if ids are available)
+        Clock.schedule_once(self._start_splash, 0.5)
+        
+        # Auto-switch to home after 3 seconds
+        Clock.schedule_once(lambda dt: self._switch_screen('home'), 3)
+        
+        # Check clipboard
+        Clock.schedule_once(self._check_clipboard, 4)
+        
+        # Load library
+        Clock.schedule_once(lambda dt: self.refresh_library(), 3.5)
+    
     def on_pause(self):
-        return True  # Critical: Allows app to run in background
+        """CRITICAL: Prevent Android from killing app in background"""
+        return True
+    
+    def on_resume(self):
+        """Resume from background"""
+        return True
+    
+    # ═══════════════════════════════════════════════════════════════════════
+    # INITIALIZATION
+    # ═══════════════════════════════════════════════════════════════════════
+    def _setup_storage(self):
+        """Create app directories"""
+        if platform == 'android':
+            base = Path("/sdcard/Download/AnyLoad")
+        else:
+            base = Path.home() / "Downloads" / "AnyLoad"
+        
+        self.base_path = base
+        for folder in ["Videos", "Audio", "Playlists", ".thumbnails", ".temp"]:
+            (base / folder).mkdir(parents=True, exist_ok=True)
+        
+        # Vault .nomedia
+        vault = base / "Vault"
+        vault.mkdir(exist_ok=True)
+        (vault / ".nomedia").touch()
+        
+        # Initialize database
+        self.db = get_database(base)
+        
+        print(f"[✓] Storage initialized: {base}")
+    
+    def _request_permissions(self, dt):
+        """Request Android 13+ permissions"""
+        if platform != 'android':
+            return
+        
+        try:
+            from android.permissions import request_permissions, Permission
+            from android import api_version
+            
+            perms = [Permission.INTERNET]
+            
+            if api_version >= 33:  # Android 13+
+                perms.extend([
+                    Permission.READ_MEDIA_VIDEO,
+                    Permission.READ_MEDIA_AUDIO,
+                    Permission.POST_NOTIFICATIONS
+                ])
+            else:
+                perms.extend([
+                    Permission.READ_EXTERNAL_STORAGE,
+                    Permission.WRITE_EXTERNAL_STORAGE
+                ])
+            
+            request_permissions(perms)
+            print("[✓] Permissions requested")
+        except Exception as e:
+            print(f"[!] Permission error: {e}")
+    
+    # ═══════════════════════════════════════════════════════════════════════
+    # SPLASH & ANIMATIONS
+    # ═══════════════════════════════════════════════════════════════════════
+    def _start_splash(self, dt):
+        """Animate splash dots"""
+        # Skip if root not ready
+        if not self.root or not hasattr(self.root, 'ids'):
+            return
+        
+        try:
+            # Simple animation - just let it show
+            pass
+        except Exception as e:
+            print(f"[!] Splash animation error: {e}")
+    
+    def _switch_screen(self, screen_name):
+        """Switch screen with validation"""
+        try:
+            self.root.ids.content_manager.current = screen_name
+        except Exception as e:
+            print(f"[!] Screen switch error: {e}")
+    
+    def start_download_indicator(self):
+        """Start top bar animated dots"""
+        self.is_active_download = True
+        self._animate_top_dots()
+    
+    def stop_download_indicator(self):
+        """Stop top bar animated dots"""
+        self.is_active_download = False
+        self.dot_text = "."
+    
+    def _animate_top_dots(self):
+        """Animate top bar dots with text cycling"""
+        if not self.is_active_download:
+            return
+        
+        def cycle_dots(dt):
+            if not self.is_active_download:
+                self.dot_text = "."
+                return
+            
+            if self.dot_text == ".":
+                self.dot_text = ".."
+            elif self.dot_text == "..":
+                self.dot_text = "..."
+            else:
+                self.dot_text = "."
+        
+        Clock.schedule_interval(cycle_dots, 0.5)
+    
+    # ═══════════════════════════════════════════════════════════════════════
+    # NAVIGATION & DIALOGS
+    # ═══════════════════════════════════════════════════════════════════════
+    def open_drawer(self):
+        """Open navigation drawer"""
+        try:
+            self.root.ids.nav_drawer.set_state("open")
+        except Exception as e:
+            print(f"[!] Drawer open error: {e}")
+    
+    def close_drawer(self):
+        """Close navigation drawer"""
+        try:
+            self.root.ids.nav_drawer.set_state("close")
+        except Exception as e:
+            print(f"[!] Drawer close error: {e}")
+    
+    def show_download_history(self):
+        """Navigate to library screen"""
+        self.close_drawer()
+        try:
+            self.root.ids.content_manager.current = 'library'
+        except Exception as e:
+            print(f"[!] Navigate to library error: {e}")
+    
+    def show_supported_sites(self):
+        """Show supported platforms dialog"""
+        self.close_drawer()
+        
+        sites_text = """• YouTube (Videos & Playlists)
+• Facebook (Videos & Stories)
+• Instagram (Posts, Reels, Stories)
+• Twitter/X (Videos)
+• TikTok (Videos)
+• SoundCloud (Audio)
+• Vimeo (Videos)
+• Dailymotion (Videos)
+• Reddit (Videos)
+• And 1000+ more sites!
 
-    def start_animations(self, dt):
-        pass # Optional pulse logic
+Powered by yt-dlp engine."""
+        
+        dialog = MDDialog(
+            title="Supported Platforms",
+            text=sites_text,
+            size_hint=(0.85, None),
+            md_bg_color=(0.1, 0.1, 0.1, 1),
+            radius=[20, 20, 20, 20],
+            buttons=[
+                MDFlatButton(
+                    text="CLOSE",
+                    font_name="Roboto",
+                    theme_text_color="Custom",
+                    text_color=(0, 0.82, 0.63, 1),
+                    on_release=lambda x: dialog.dismiss()
+                )
+            ]
+        )
+        
+        # Apply fonts
+        dialog.ids.title.font_name = "Roboto"
+        dialog.ids.title.theme_text_color = "Custom"
+        dialog.ids.title.text_color = (1, 1, 1, 1)
+        dialog.ids.text.font_name = "Roboto"
+        dialog.ids.text.theme_text_color = "Custom"
+        dialog.ids.text.text_color = (0.85, 0.85, 0.85, 1)
+        
+        dialog.open()
+    
+    def share_app(self):
+        """Share app via Android native share"""
+        self.close_drawer()
+        
+        try:
+            if platform != 'android':
+                self.show_toast("Share is only available on Android")
+                return
+            
+            from jnius import autoclass, cast
+            
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Intent = autoclass('android.content.Intent')
+            String = autoclass('java.lang.String')
+            
+            # Get current activity
+            currentActivity = cast('android.app.Activity', PythonActivity.mActivity)
+            
+            # Create share message
+            share_message = "Download AnyLoad: The fastest, ad-free media downloader for Android! \ud83d\ude80"
+            
+            # Create share intent
+            intent = Intent(Intent.ACTION_SEND)
+            intent.setType("text/plain")
+            intent.putExtra(Intent.EXTRA_TEXT, share_message)
+            
+            # Create chooser
+            chooser = Intent.createChooser(intent, cast('java.lang.CharSequence', String("Share AnyLoad via")))
+            currentActivity.startActivity(chooser)
+            
+            print("[\u2713] Share intent launched")
+        
+        except Exception as e:
+            print(f"[!] Share app error: {e}")
+            import traceback
+            traceback.print_exc()
+            self.show_toast("Failed to share")
+    
+    def show_report_issue(self):
+        """Show report issue dialog"""
+        self.close_drawer()
+        
+        report_text = """Found a bug or issue?
 
-    def check_clipboard(self, *args):
+Please report it to:
+
+\u2709\ufe0f Email: support@anyload.app
+\ud83d\udc1b GitHub: github.com/anyload/issues
+
+Include:
+\u2022 Device model
+\u2022 Android version
+\u2022 Steps to reproduce
+\u2022 Screenshots (if possible)
+
+We appreciate your feedback!"""
+        
+        dialog = MDDialog(
+            title="Report an Issue",
+            text=report_text,
+            size_hint=(0.85, None),
+            md_bg_color=(0.1, 0.1, 0.1, 1),
+            radius=[20, 20, 20, 20],
+            buttons=[
+                MDFlatButton(
+                    text="CLOSE",
+                    font_name="Roboto",
+                    theme_text_color="Custom",
+                    text_color=(0, 0.82, 0.63, 1),
+                    on_release=lambda x: dialog.dismiss()
+                )
+            ]
+        )
+        
+        # Apply fonts
+        dialog.ids.title.font_name = "Roboto"
+        dialog.ids.title.theme_text_color = "Custom"
+        dialog.ids.title.text_color = (1, 1, 1, 1)
+        dialog.ids.text.font_name = "Roboto"
+        dialog.ids.text.theme_text_color = "Custom"
+        dialog.ids.text.text_color = (0.85, 0.85, 0.85, 1)
+        
+        dialog.open()
+    
+    def show_about_dialog(self):
+        """Show premium about dialog"""
+        self.close_drawer()
+        
+        about_text = """AnyLoad is a premium, lightweight media downloader.
+
+\ud83d\ude80 KEY FEATURES:
+\u2022 Powered by yt-dlp engine
+\u2022 High-quality downloads
+\u2022 Universal Unicode support
+\u2022 Intelligent queue management
+\u2022 1000+ supported sites
+
+\ud83d\udee1\ufe0f PHILOSOPHY:
+\u2022 No Ads, No Bloatware
+\u2022 Privacy-focused
+\u2022 Open architecture
+
+\ud83d\udc68\u200d\ud83d\udcbb DEVELOPER:
+Built with \u2764\ufe0f by Nirob & AI Partner
+
+Version 1.1.0
+\u00a9 2024 AnyLoad"""
+        
+        dialog = MDDialog(
+            title="About AnyLoad",
+            text=about_text,
+            size_hint=(0.85, None),
+            md_bg_color=(0.1, 0.1, 0.1, 1),
+            radius=[20, 20, 20, 20],
+            buttons=[
+                MDFlatButton(
+                    text="CLOSE",
+                    font_name="Roboto",
+                    theme_text_color="Custom",
+                    text_color=(0, 0.82, 0.63, 1),
+                    on_release=lambda x: dialog.dismiss()
+                )
+            ]
+        )
+        
+        # Apply fonts
+        dialog.ids.title.font_name = "Roboto"
+        dialog.ids.title.theme_text_color = "Custom"
+        dialog.ids.title.text_color = (1, 1, 1, 1)
+        dialog.ids.text.font_name = "Roboto"
+        dialog.ids.text.theme_text_color = "Custom"
+        dialog.ids.text.text_color = (0.85, 0.85, 0.85, 1)
+        
+        dialog.open()
+    
+    def switch_to_configs(self):
+        """Switch to configs screen"""
+        try:
+            self.root.ids.content_manager.current = 'configs'
+        except Exception as e:
+            print(f"[!] Switch to configs error: {e}")
+    
+    # ═══════════════════════════════════════════════════════════════════════
+    # CLIPBOARD & URL VALIDATION
+    # ═══════════════════════════════════════════════════════════════════════
+    def _check_clipboard(self, dt):
+        """Check if clipboard has URL"""
         try:
             text = Clipboard.paste()
             if text and ("http://" in text or "https://" in text):
-                self.show_toast("Link detected in clipboard! Paste it.")
+                self.show_toast("🔗 Link detected in clipboard!")
         except Exception as e:
             print(f"[!] Clipboard check error: {e}")
-
-    def paste_from_clipboard(self):
+    
+    def paste_url(self):
+        """Smart paste with cursor reset"""
         try:
             text = Clipboard.paste()
             if text:
-                self.root.ids.url_input.text = text
-                self.show_toast("Link pasted successfully!")
-            else:
-                self.show_toast("Clipboard is empty")
+                url_field = self.root.ids.url_input
+                url_field.text = text.strip()
+                url_field.cursor = (0, 0)  # Move cursor to start
+                self.validate_url()
+                self.show_toast("✓ Pasted")
         except Exception as e:
             print(f"[!] Paste error: {e}")
-            self.show_toast("Failed to paste from clipboard")
-
-    def show_toast(self, text):
-        print(f"[TOAST] {text}")
-        if platform == 'android':
-            try:
-                from kivymd.toast import toast
-                toast(text)
-            except Exception:
-                pass
-
-    # ── Download flow ─────────────────────────────────────────────────────────
-
-    def process_download(self, mode_title):
+    
+    def validate_url(self):
+        """Real-time URL validation"""
         try:
             url = self.root.ids.url_input.text.strip()
-        except Exception:
-            self.show_toast("Please paste a valid URL first")
-            return
-        if not url:
-            self.show_toast("Please paste a valid URL first")
-            return
-        if mode_title == "Choose Quality Manually":
-            self.root.ids.screen_manager.current = "quality_select"
-            return
-        self._initiate_download(url, mode_title)
-
-    def start_manual_download(self, quality):
-        try:
-            url = self.root.ids.url_input.text.strip()
-        except Exception:
-            self.show_toast("Please paste a valid URL first")
-            return
-        if not url:
-            self.show_toast("Please paste a valid URL first")
-            return
-        self._initiate_download(url, f"Choose Quality Manually ({quality})")
-
-    def _initiate_download(self, url, mode_title):
-        self.root.ids.screen_manager.current = "tasks"
-        task_container = self.root.ids.task_container
-        try:
-            task_container.remove_widget(self.root.ids.empty_task_label)
-        except Exception:
-            pass
+            error_label = self.root.ids.url_error
             
-        # ইনস্ট্যান্ট UI ফিডব্যাক (Preparing দেখাবে না)
-        new_task = TaskCard(
-            url=url, mode=mode_title,
-            filename="Connecting...",
-            status_text="Speed: -- KB/s • ETA: --:--",
-            total_size="-- MB",
-            progress_value=0
-        )
-        task_container.add_widget(new_task)
-        self._start_engine(new_task)
-
-    def _start_engine(self, task_card):
-        """এই ফাংশনটি মুছে গিয়েছিল, এটি আবার যুক্ত করা হলো"""
-        manager = DownloadManager(
-            url=task_card.url,
-            mode=task_card.mode,
-            base_path=self.base_path,
-            callback=lambda t, d, tc=task_card: self.engine_callback(t, d, tc),
-            task_card=task_card
-        )
-        task_card.manager_ref = manager
-        import threading
-        threading.Thread(target=manager.run, daemon=True).start()
-
+            if not url:
+                error_label.text = "URL cannot be empty"
+                error_label.opacity = 1
+                return False
+            
+            if not re.match(r'https?://', url):
+                error_label.text = "Invalid URL format"
+                error_label.opacity = 1
+                return False
+            
+            error_label.opacity = 0
+            return True
+        except Exception as e:
+            print(f"[!] Validation error: {e}")
+            return False
+    
+    # ═══════════════════════════════════════════════════════════════════════
+    # DOWNLOAD FLOW
+    # ═══════════════════════════════════════════════════════════════════════
+    def start_download(self, mode):
+        """
+        Start download with queue management
+        mode: 'auto', 'audio', 'playlist'
+        """
+        if not self.validate_url():
+            return
+        
+        url = self.root.ids.url_input.text.strip()
+        
+        # Generate task ID
+        import uuid
+        task_id = str(uuid.uuid4())[:8]
+        
+        # Create task card
+        task_data = {
+            'task_id': task_id,
+            'url': url,
+            'mode': mode,
+            'filename': 'Connecting...',
+            'thumbnail': 'assets/logo.png',
+            'badge': 'MP3' if mode == 'audio' else 'MP4',
+            'progress': 0,
+            'speed': '-- KB/s',
+            'eta': '--:--',
+            'status': 'waiting'
+        }
+        
+        # Add to queue
+        if len(self.active_tasks) < self.max_concurrent:
+            self.active_tasks.append(task_id)
+            task_data['status'] = 'downloading'
+            self._execute_download(task_data)
+        else:
+            self.waiting_tasks.append(task_id)
+        
+        # Add card to UI
+        self._add_task_card(task_data)
+        
+        # Switch to tasks tab
+        self.root.ids.content_manager.current = 'tasks'
+        
+        # Start indicator
+        self.start_download_indicator()
+    
     @mainthread
-    def engine_callback(self, msg_type, data, task_card):
-        import re
-        # ANSI কালার কোড রিমুভ করার জাদুকরী ফাংশন
-        def clean_text(text):
-            if not isinstance(text, str): return text
-            ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-            return ansi_escape.sub('', text).strip()
-
-        if msg_type == "status":
-            task_card.filename = clean_text(data)
+    def _add_task_card(self, task_data):
+        """Add task card to UI"""
+        try:
+            container = self.root.ids.task_container
             
-        elif msg_type == "progress":
-            task_card.filename = data.get('title', '')
-            task_card.status_text = f"Speed: {data.get('speed','')} • ETA: {data.get('eta','')}"
-            task_card.total_size = data.get('total', '')
+            # Remove empty label if exists
+            for widget in container.children[:]:
+                if isinstance(widget, MDLabel) and widget.text == "No active downloads":
+                    container.remove_widget(widget)
+                    break
             
-            try:
-                new_percent = float(data.get('percent', '0').replace('%', ''))
-                # জিরো জাম্প ফিক্স: শুধুমাত্র যখন পজ করা নেই তখনই আপডেট হবে
-                if not task_card.is_paused:
-                    task_card.progress_value = new_percent
-            except Exception:
-                pass
+            # Create card
+            card = TaskCard(**task_data)
+            container.add_widget(card)
+            print(f"[✓] Task card added: {task_data['task_id']}")
+        except Exception as e:
+            print(f"[!] Add task card error: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _execute_download(self, task_data):
+        """Execute download in background thread"""
+        def download_thread():
+            task_id = task_data['task_id']
+            
+            # Create download engine
+            engine = DownloadEngine(
+                url=task_data['url'],
+                mode=task_data['mode'],
+                base_path=self.base_path,
+                progress_callback=self._on_progress_update,
+                task_id=task_id
+            )
+            
+            # Store engine reference
+            self.task_engines[task_id] = engine
+            
+            # Execute download
+            success, filepath, error = engine.run()
+            
+            # Remove engine reference
+            if task_id in self.task_engines:
+                del self.task_engines[task_id]
+            
+            # Handle result
+            if success:
+                self._on_download_complete(task_id, filepath)
+            else:
+                self._on_download_failed(task_id, error or "Download failed")
+        
+        threading.Thread(target=download_thread, daemon=True).start()
+    
+    @mainthread
+    def _on_progress_update(self, data):
+        """Handle progress updates from download engine"""
+        task_id = data.pop('task_id')
+        self._update_task_progress(task_id, **data)
+    
+    @mainthread
+    def _update_task_progress(self, task_id, **kwargs):
+        """Update task card progress with combined bottom row"""
+        try:
+            container = self.root.ids.task_container
+            for card in container.children:
+                if isinstance(card, TaskCard) and card.task_id == task_id:
+                    # Update individual properties
+                    for key, value in kwargs.items():
+                        setattr(card, key, value)
+                    
+                    # Build combined bottom row text
+                    status_map = {
+                        'waiting': 'WAITING',
+                        'downloading': 'DOWNLOADING',
+                        'paused': 'PAUSED',
+                        'completed': 'COMPLETED',
+                        'failed': 'FAILED'
+                    }
+                    card.status_text = status_map.get(card.status, 'UNKNOWN')
+                    card.percent_text = f"{int(card.progress)}%"
+                    card.play_pause_icon = "play" if card.is_paused else "pause"
+                    card.bottom_row_text = f"{card.status_text}  •  ETA {card.eta}  •  {card.size_info}"
+                    break
+        except Exception as e:
+            print(f"[!] Update progress error: {e}")
+    
+    @mainthread
+    def _on_download_complete(self, task_id, filepath):
+        """Handle download completion"""
+        try:
+            # Update card to 100%
+            self._update_task_progress(task_id, progress=100, status='completed')
+            
+            # Save to database
+            if filepath:
+                file_path = Path(filepath)
+                file_type = 'audio' if file_path.suffix == '.mp3' else 'video'
                 
-        elif msg_type == "finished":
-            task_card.progress_value = 100
-            task_card.status_text = "Completed ✓"
-            task_card.md_bg_color = (0, 0.18, 0.1, 1)
-            fpath = data.get("filepath")
-            if fpath and fpath.lower().endswith(('.mp4', '.mkv', '.webm')):
-                ThumbnailGenerator.generate(fpath)
-            Clock.schedule_once(lambda dt: self.remove_task(task_card), 2)
+                # Get file size
+                size_bytes = file_path.stat().st_size if file_path.exists() else 0
+                
+                # Download thumbnail
+                thumbnail_path = None
+                if file_type == 'audio':
+                    thumbnail_path = ThumbnailDownloader.extract_from_audio(
+                        file_path,
+                        self.base_path / ".thumbnails"
+                    )
+                
+                # Save to database
+                self.db.add_media(
+                    filepath=str(file_path),
+                    filename=file_path.name,
+                    file_type=file_type,
+                    size_bytes=size_bytes,
+                    thumbnail_path=thumbnail_path
+                )
+            
+            # Wait 2s then remove card
+            Clock.schedule_once(lambda dt: self._remove_task_card(task_id), 2)
+            
+            # Refresh library
             Clock.schedule_once(lambda dt: self.refresh_library(), 2.5)
             
-        elif msg_type == "failed":
-            task_card.status_text = "Failed. Please try again."
-            task_card.md_bg_color = (0.28, 0, 0, 1)
+            # Remove from active tasks
+            if task_id in self.active_tasks:
+                self.active_tasks.remove(task_id)
             
+            # Start next waiting task
+            self._start_next_waiting_task()
             
-    def remove_task(self, task_card):
+            # Show notification
+            self.show_toast("✓ Download completed!")
+        except Exception as e:
+            print(f"[!] Complete handler error: {e}")
+    
+    @mainthread
+    def _on_download_failed(self, task_id, error):
+        """Handle download failure"""
         try:
-            self.root.ids.task_container.remove_widget(task_card)
-        except Exception:
-            pass
-
-    # ── Library ───────────────────────────────────────────────────────────────
-
+            # Check if it's a pause (not a real failure)
+            if error == "PAUSED":
+                self._update_task_progress(
+                    task_id, 
+                    status='paused', 
+                    is_paused=True,
+                    speed='Paused'
+                )
+                print(f"[✓] Task {task_id} paused successfully")
+            else:
+                self._update_task_progress(task_id, status='failed', speed=error)
+            
+            if task_id in self.active_tasks:
+                self.active_tasks.remove(task_id)
+            
+            self._start_next_waiting_task()
+        except Exception as e:
+            print(f"[!] Failed handler error: {e}")
+    
+    def _start_next_waiting_task(self):
+        """Start next task from waiting queue"""
+        if self.waiting_tasks and len(self.active_tasks) < self.max_concurrent:
+            next_task_id = self.waiting_tasks.pop(0)
+            self.active_tasks.append(next_task_id)
+            
+            # Update card status and start download
+            # (Implementation in PART 2)
+        
+        # Stop indicator if no active tasks
+        if not self.active_tasks:
+            self.stop_download_indicator()
+    
+    @mainthread
+    def _remove_task_card(self, task_id):
+        """Remove task card from UI"""
+        try:
+            container = self.root.ids.task_container
+            for card in container.children[:]:
+                if isinstance(card, TaskCard) and card.task_id == task_id:
+                    container.remove_widget(card)
+                    print(f"[✓] Task card removed: {task_id}")
+                    break
+            
+            # Show empty label if no tasks
+            if not any(isinstance(w, TaskCard) for w in container.children):
+                empty_label = MDLabel(
+                    text="No active downloads",
+                    font_style="Subtitle1",
+                    theme_text_color="Hint",
+                    halign="center",
+                    size_hint_y=None,
+                    height="50dp"
+                )
+                container.add_widget(empty_label)
+        except Exception as e:
+            print(f"[!] Remove card error: {e}")
+    
+    def pause_task(self, task_id):
+        """Pause a download task"""
+        try:
+            # Check if task is already completed
+            container = self.root.ids.task_container
+            for card in container.children:
+                if isinstance(card, TaskCard) and card.task_id == task_id:
+                    if card.status == 'completed':
+                        print(f"[!] Task {task_id} already completed, ignoring pause")
+                        return
+                    break
+            
+            if task_id in self.task_engines:
+                self.task_engines[task_id].pause()
+                print(f"[✓] Pause signal sent to task {task_id}")
+        except Exception as e:
+            print(f"[!] Pause error: {e}")
+    
+    def resume_task(self, task_id):
+        """Resume a paused task by spawning new thread"""
+        try:
+            # Find the task card to get URL and mode
+            container = self.root.ids.task_container
+            task_card = None
+            
+            for card in container.children:
+                if isinstance(card, TaskCard) and card.task_id == task_id:
+                    task_card = card
+                    break
+            
+            if not task_card:
+                print(f"[!] Task card not found for {task_id}")
+                return
+            
+            # Update UI state
+            self._update_task_progress(
+                task_id, 
+                is_paused=False, 
+                status='downloading',
+                speed='Resuming...'
+            )
+            
+            # Spawn new download thread (yt-dlp will resume from .part file)
+            task_data = {
+                'task_id': task_id,
+                'url': task_card.url,
+                'mode': task_card.mode
+            }
+            
+            self._execute_download(task_data)
+            print(f"[✓] Resume thread spawned for task {task_id}")
+        
+        except Exception as e:
+            print(f"[!] Resume error: {e}")
+    
+    def cancel_task(self, task_id):
+        """Cancel a download task"""
+        try:
+            # Cancel engine
+            if task_id in self.task_engines:
+                self.task_engines[task_id].cancel()
+                del self.task_engines[task_id]
+            
+            # Mark as cancelled
+            self._update_task_progress(task_id, status='cancelled')
+            
+            # Remove from queues
+            if task_id in self.active_tasks:
+                self.active_tasks.remove(task_id)
+            if task_id in self.waiting_tasks:
+                self.waiting_tasks.remove(task_id)
+            
+            # Remove card
+            self._remove_task_card(task_id)
+            
+            # Start next waiting task
+            self._start_next_waiting_task()
+        except Exception as e:
+            print(f"[!] Cancel error: {e}")
+    
+    # ═══════════════════════════════════════════════════════════════════════
+    # LIBRARY
+    # ═══════════════════════════════════════════════════════════════════════
     @mainthread
     def refresh_library(self):
-        v_dir = os.path.join(self.base_path, "Videos")
-        a_dir = os.path.join(self.base_path, "Audio")
-        video_data, audio_data = [],[]
-        if os.path.exists(v_dir):
-            for f in sorted(os.listdir(v_dir), reverse=True):
-                if f.lower().endswith(('.mp4', '.mkv', '.webm')):
-                    fp = os.path.join(v_dir, f)
-                    video_data.append({
-                        'filename': f,
-                        'thumbnail_path': ThumbnailGenerator.generate(fp),
-                        'filepath': fp,
+        """Refresh library from filesystem"""
+        try:
+            videos = []
+            audios = []
+            
+            # Get from database
+            video_records = self.db.get_all_media('video')
+            audio_records = self.db.get_all_media('audio')
+            
+            # Format for RecycleView
+            for record in video_records:
+                if Path(record['filepath']).exists():
+                    videos.append({
+                        'filename': record['filename'],
+                        'thumbnail': record['thumbnail_path'] or 'assets/logo.png',
+                        'filepath': record['filepath'],
                         'file_type': 'video'
                     })
-        if os.path.exists(a_dir):
-            for f in sorted(os.listdir(a_dir), reverse=True):
-                if f.lower().endswith(('.mp3', '.m4a', '.wav')):
-                    fp = os.path.join(a_dir, f)
-                    
-                    # হার্ডকোড ছবির বদলে এখন আসল ছবি বের করবে
-                    tp = ThumbnailGenerator.get_audio_thumb(fp) 
-                    
-                    audio_data.append({
-                        'filename': f,
-                        'thumbnail_path': tp,
-                        'filepath': fp,
+            
+            for record in audio_records:
+                if Path(record['filepath']).exists():
+                    audios.append({
+                        'filename': record['filename'],
+                        'thumbnail': record['thumbnail_path'] or 'assets/logo.png',
+                        'filepath': record['filepath'],
                         'file_type': 'audio'
                     })
-        try:
-            self.root.ids.video_rv.data = video_data
-            self.root.ids.audio_rv.data = audio_data
+            
+            # Update RecycleViews
+            self.root.ids.video_rv.data = videos
+            self.root.ids.audio_rv.data = audios
+            
+            print(f"[✓] Library refreshed: {len(videos)} videos, {len(audios)} audios")
         except Exception as e:
-            print(f"[!] Library sync error: {e}")
-# ── Safe Library Menu & Dialogs ──────────────────────────────────────────
-
-    def open_library_menu(self, lib_card):
-        from kivy.uix.modalview import ModalView
-        self.menu_view = ModalView(size_hint=(0.8, None), height="280dp", background_color=(0,0,0,0))
-        card = MDCard(orientation="vertical", padding="15dp", spacing="10dp", radius=20, md_bg_color=(0.12, 0.12, 0.12, 1))
-        
-        # এখানে 'font_name' হিসেবে আপনার বাংলা ফন্টের নামটি ব্যবহার করুন (যেমন 'Bangla' অথবা 'Roboto')
-        title = MDLabel(text="Options", font_name="Roboto", style="TitleMedium", theme_text_color="Custom", text_color=(0, 0.8, 0.7, 1), size_hint_y=None, height="30dp", halign="center")
-        card.add_widget(title)
-
-        def make_btn(text, action):
-            btn = MDButton(style="text", on_release=lambda x: self._menu_action(lib_card, action), size_hint_x=1)
-            # এখানেও font_name যোগ করুন
-            btn.add_widget(MDButtonText(text=text, font_name="Roboto", theme_text_color="Custom", text_color=(1,1,1,1)))
-            return btn
-        
-        # ... (বাকি বাটনগুলো আগের মতোই থাকবে) ...
-        btn_box = MDBoxLayout(orientation="vertical", spacing="2dp", adaptive_height=True)
-        btn_box.add_widget(make_btn("▶ Play Media", 'play'))
-        if lib_card.file_type == 'audio':
-            btn_box.add_widget(make_btn("✂ Trim Audio", 'trim'))
-        btn_box.add_widget(make_btn("✏️ Rename", 'rename')) # নতুন ফিচার
-        btn_box.add_widget(make_btn("🛡️ Move to Vault", 'vault'))
-        btn_box.add_widget(make_btn("🗑️ Delete File", 'delete'))
-        
-        card.add_widget(btn_box)
-        self.menu_view.add_widget(card)
-        self.menu_view.open()
-
-    def _menu_action(self, lib_card, action):
-        if hasattr(self, 'menu_view'): self.menu_view.dismiss()
-        if action == 'play': lib_card.play_media()
-        elif action == 'trim': self.show_trim_dialog(lib_card.filepath)
-        elif action == 'vault': self.confirm_vault_move(lib_card.filepath, lib_card.filename)
-        elif action == 'delete': self.delete_library_file(lib_card)
-        elif action == 'rename': self.show_rename_dialog(lib_card)
-
-    def show_rename_dialog(self, lib_card):
-        """ফাইল রিনেম করার ডায়ালগ"""
-        view = ModalView(size_hint=(0.85, None), height="200dp", background_color=(0,0,0,0))
-        card = MDCard(orientation="vertical", padding="20dp", spacing="15dp", radius=20, md_bg_color=(0.12, 0.12, 0.12, 1))
-        
-        name_field = MDTextField(hint_text="New Name", text=os.path.splitext(lib_card.filename)[0])
-        card.add_widget(MDLabel(text="Rename File", style="TitleMedium", theme_text_color="Custom", text_color=(0, 0.8, 0.7, 1), size_hint_y=None, height="30dp"))
-        card.add_widget(name_field)
-        
-        btn = MDButton(style="filled", on_release=lambda x: self._execute_rename(lib_card, name_field.text, view), pos_hint={"center_x": .5})
-        btn.add_widget(MDButtonText(text="Rename"))
-        card.add_widget(btn)
-        
-        view.add_widget(card)
-        view.open()
-
-    def _execute_rename(self, lib_card, new_name, view):
+            print(f"[!] Library refresh error: {e}")
+    
+    def play_media(self, filepath):
+        """Play media file"""
         try:
-            ext = os.path.splitext(lib_card.filepath)[1]
-            new_path = os.path.join(os.path.dirname(lib_card.filepath), new_name + ext)
-            os.rename(lib_card.filepath, new_path)
-            self.refresh_library()
-            self.show_toast("Renamed successfully")
-            view.dismiss()
-        except Exception as e:
-            self.show_toast("Rename failed")
-            print(f"[!] Rename error: {e}")
-
-    def _menu_action(self, lib_card, action):
-        if hasattr(self, 'menu_view'):
-            self.menu_view.dismiss()
-            
-        if action == 'play': lib_card.play_media()
-        elif action == 'trim': self.show_trim_dialog(lib_card.filepath)
-        elif action == 'vault': self.verify_before_move(lib_card.filepath, lib_card.filename)
-        elif action == 'details': self.show_file_details(lib_card)
-        elif action == 'delete': self.delete_library_file(lib_card)
-
-    def show_file_details(self, lib_card):
-        self.details_view = ModalView(size_hint=(0.85, None), height="200dp", background_color=(0,0,0,0))
-        card = MDCard(orientation="vertical", padding="20dp", spacing="15dp", radius=20, md_bg_color=(0.1, 0.1, 0.1, 1))
-        
-        card.add_widget(MDLabel(text="File Details", style="TitleMedium", theme_text_color="Custom", text_color=(0, 0.8, 0.7, 1), size_hint_y=None, height="30dp"))
-        card.add_widget(MDLabel(text=f"Name: {lib_card.filename}\nPath: {lib_card.filepath}", style="BodyMedium", theme_text_color="Custom", text_color=(1, 1, 1, 1)))
-        
-        btn = MDButton(style="filled", on_release=lambda x: self.details_view.dismiss(), pos_hint={"center_x": .5})
-        btn.add_widget(MDButtonText(text="Close"))
-        card.add_widget(btn)
-        
-        self.details_view.add_widget(card)
-        self.details_view.open()
-
-    def show_trim_dialog(self, filepath):
-        if not filepath.lower().endswith(('.mp3', '.m4a', '.wav')):
-            self.show_toast("Trim available only for audio files")
-            return
-            
-        self.trim_view = ModalView(size_hint=(0.85, None), height="250dp", background_color=(0,0,0,0))
-        card = MDCard(orientation="vertical", padding="20dp", spacing="15dp", radius=20, md_bg_color=(0.1, 0.1, 0.1, 1))
-        
-        card.add_widget(MDLabel(text="Trim Audio (Ringtone)", style="TitleMedium", theme_text_color="Custom", text_color=(0, 0.8, 0.7, 1), size_hint_y=None, height="30dp"))
-        
-        self.trim_start_field = MDTextField(hint_text="Start (seconds)", text="0")
-        self.trim_end_field = MDTextField(hint_text="End (seconds)", text="30")
-        card.add_widget(self.trim_start_field)
-        card.add_widget(self.trim_end_field)
-        
-        btn_box = MDBoxLayout(orientation="horizontal", spacing="10dp", size_hint_y=None, height="40dp")
-        
-        btn_cancel = MDButton(style="outlined", on_release=lambda x: self.trim_view.dismiss())
-        btn_cancel.add_widget(MDButtonText(text="Cancel"))
-        
-        btn_trim = MDButton(style="filled", on_release=lambda x: self._confirm_trim(filepath))
-        btn_trim.add_widget(MDButtonText(text="Trim"))
-        
-        btn_box.add_widget(btn_cancel)
-        btn_box.add_widget(btn_trim)
-        card.add_widget(btn_box)
-        
-        self.trim_view.add_widget(card)
-        self.trim_view.open()
-
-    def _confirm_trim(self, filepath):
-        try:
-            start = float(self.trim_start_field.text or 0)
-            end = float(self.trim_end_field.text or 0)
-        except ValueError:
-            self.show_toast("Enter valid start and end times")
-            return
-            
-        if end <= start:
-            self.show_toast("End time must be greater than start time")
-            return
-            
-        self.trim_view.dismiss()
-        
-        output_dir = os.path.join(self.base_path, 'Ringtones')
-        os.makedirs(output_dir, exist_ok=True)
-        
-        from features.audio_trimmer import AudioTrimmer
-        result = AudioTrimmer.trim(filepath, start, end, output_dir)
-        
-        self.show_toast("Trimmed audio saved" if result else "Trim failed")
-        if result:
-            self.refresh_library()
-    # ── Vault ─────────────────────────────────────────────────────────────────
-
-    def load_vault_contents(self):
-        try:
-            files = db.get_vault_files()
-            vault_data = []
-            for name, path, ftype in files:
-                if os.path.exists(path):
-                    # থাম্বনেইল জেনারেট করা
-                    tp = ThumbnailGenerator.generate(path) if ftype == 'video' else "assets/default_audio.png"
-                    vault_data.append({
-                        'filename': name,
-                        'thumbnail_path': tp,
-                        'filepath': path,
-                        'file_type': ftype
-                    })
-            
-            # ভল্ট স্ক্রিন আপডেট
-            self.root.ids.vault_rv.data = vault_data
-            
-            # পিন প্যাড হাইড করে লিস্ট দেখানো
-            self.root.ids.pin_pad_box.opacity = 0
-            self.root.ids.pin_pad_box.disabled = True
-            self.root.ids.vault_rv.opacity = 1
-            self.root.ids.vault_rv.disabled = False
-            
-            print(f"[*] Found {len(vault_data)} files in Vault.")
-        except Exception as e:
-            print(f"[!] Vault load error: {e}")
-
-    def vault_pin_input(self, digit):
-        if digit == 'C':
-            self.current_pin = ""
-        elif len(self.current_pin) < 4:
-            self.current_pin += digit
-        try:
-            self.root.ids.pin_display.text = "*" * len(self.current_pin)
-        except Exception:
-            pass
-
-    def vault_authorize(self):
-        if len(self.current_pin) < 4:
-            self.root.ids.vault_msg.text = "PIN must be 4 digits!"
-            return
-        try:
-            if not db.is_pin_set():
-                # প্রথমবার PIN সেট করার সময় সিকিউরিটি প্রশ্ন দেখাও
-                self.show_security_questions_setup()
-            elif db.check_pin(self.current_pin):
-                if self.current_action == "MOVING_FILE":
-                    # ফাইল মুভ করার জন্য PIN চেক হয়েছে
-                    self._execute_vault_move()
-                else:
-                    # নর্মাল লগইন
-                    self.root.ids.vault_msg.text = "Access Granted!"
-                    self.root.ids.vault_status_icon.icon = "shield-check"
-                    self.root.ids.vault_status_icon.text_color = (0, 0.85, 0.77, 1)
-                    self.root.ids.pin_pad_box.opacity = 0
-                    self.root.ids.pin_pad_box.disabled = True
-                    self.root.ids.vault_rv.opacity = 1
-                    self.root.ids.vault_rv.disabled = False
-                    self.load_vault_contents()
-                self.current_pin = ""
-                self.root.ids.pin_display.text = ""
+            if platform == 'android':
+                from jnius import autoclass
+                Intent = autoclass('android.content.Intent')
+                Uri = autoclass('android.net.Uri')
+                File = autoclass('java.io.File')
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                
+                intent = Intent(Intent.ACTION_VIEW)
+                uri = Uri.fromFile(File(filepath))
+                mime = "video/*" if filepath.endswith('.mp4') else "audio/*"
+                intent.setDataAndType(uri, mime)
+                PythonActivity.mActivity.startActivity(intent)
             else:
-                self.root.ids.vault_msg.text = "Wrong PIN! Try again."
-                self.current_pin = ""
-                self.root.ids.pin_display.text = ""
+                import subprocess
+                if sys.platform == 'linux':
+                    subprocess.Popen(['xdg-open', filepath])
+                elif sys.platform == 'darwin':
+                    subprocess.Popen(['open', filepath])
+                elif sys.platform == 'win32':
+                    os.startfile(filepath)
         except Exception as e:
-            print(f"[!] Vault auth error: {e}")
+            print(f"[!] Play media error: {e}")
+            self.show_toast("Failed to open media")
+    
+    def show_file_options(self, filename, filepath):
+        """Show compact premium options modal"""
+        from kivymd.uix.boxlayout import MDBoxLayout
+        from kivymd.uix.list import MDList, OneLineIconListItem
+        from kivymd.uix.list import IconLeftWidget
+        
+        # Create compact list container
+        content = MDBoxLayout(
+            orientation="vertical",
+            adaptive_height=True,
+            spacing=0,
+            padding=0
+        )
+        
+        # Create list
+        options_list = MDList(
+            spacing=0,
+            padding=0
+        )
+        
+        # Custom list item class with reduced height
+        class CompactOptionItem(OneLineIconListItem):
+            def __init__(self, text, icon, icon_color, action_callback, **kwargs):
+                super().__init__(**kwargs)
+                self.text = text
+                self.font_name = "Roboto"
+                self.theme_text_color = "Custom"
+                self.text_color = (1, 1, 1, 1)
+                self._height = 48
+                self.action_callback = action_callback
+                
+                # Add icon
+                icon_widget = IconLeftWidget(icon=icon)
+                icon_widget.theme_text_color = "Custom"
+                icon_widget.text_color = icon_color
+                self.add_widget(icon_widget)
             
-    # main.py এর একদম শেষে এই ফাংশনটি অবশ্যই থাকতে হবে
-    def delete_library_file(self, lib_card):
+            def on_release(self):
+                self.action_callback()
+        
+        # Store dialog reference
+        dialog_ref = [None]
+        
+        def create_action(action_type):
+            def action():
+                if dialog_ref[0]:
+                    dialog_ref[0].dismiss()
+                Clock.schedule_once(lambda dt: self._execute_file_action(action_type, filename, filepath), 0.2)
+            return action
+        
+        # Add compact options
+        options_list.add_widget(
+            CompactOptionItem(
+                text="Share",
+                icon="share-variant",
+                icon_color=(0, 0.82, 0.63, 1),
+                action_callback=create_action('share')
+            )
+        )
+        
+        options_list.add_widget(
+            CompactOptionItem(
+                text="Rename",
+                icon="pencil",
+                icon_color=(0, 0.82, 0.63, 1),
+                action_callback=create_action('rename')
+            )
+        )
+        
+        options_list.add_widget(
+            CompactOptionItem(
+                text="Details",
+                icon="information-outline",
+                icon_color=(0, 0.82, 0.63, 1),
+                action_callback=create_action('details')
+            )
+        )
+        
+        options_list.add_widget(
+            CompactOptionItem(
+                text="Delete",
+                icon="delete",
+                icon_color=(0.8, 0.2, 0.2, 1),
+                action_callback=create_action('delete')
+            )
+        )
+        
+        content.add_widget(options_list)
+        
+        # Create compact dialog
+        dialog = MDDialog(
+            title=filename,
+            type="custom",
+            content_cls=content,
+            size_hint=(0.75, None),
+            width="280dp",
+            md_bg_color=(0.1, 0.1, 0.1, 1),
+            radius=[20, 20, 20, 20]
+        )
+        
+        # Apply title font
+        dialog.ids.title.font_name = "Roboto"
+        dialog.ids.title.theme_text_color = "Custom"
+        dialog.ids.title.text_color = (1, 1, 1, 1)
+        
+        dialog_ref[0] = dialog
+        dialog.open()
+    
+    def _execute_file_action(self, action, filename, filepath):
+        """Execute file action after dialog dismissal"""
+        if action == 'share':
+            self.share_file(filepath)
+        elif action == 'rename':
+            self.rename_file(filename, filepath)
+        elif action == 'details':
+            self.show_details(filepath)
+        elif action == 'delete':
+            self.delete_file(filename, filepath)
+    
+    def share_file(self, filepath):
+        """Share file using Android native share"""
         try:
-            if os.path.exists(lib_card.filepath):
-                os.remove(lib_card.filepath)
-                self.show_toast("Deleted successfully")
+            if platform != 'android':
+                self.show_toast("Share is only available on Android")
+                return
+            
+            from jnius import autoclass, cast
+            
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Intent = autoclass('android.content.Intent')
+            String = autoclass('java.lang.String')
+            Uri = autoclass('android.net.Uri')
+            File = autoclass('java.io.File')
+            FileProvider = autoclass('androidx.core.content.FileProvider')
+            
+            # Get current activity
+            currentActivity = cast('android.app.Activity', PythonActivity.mActivity)
+            
+            # Create file object
+            file_obj = File(filepath)
+            
+            # Get file URI using FileProvider (Android 7+)
+            try:
+                authority = currentActivity.getPackageName() + ".fileprovider"
+                uri = FileProvider.getUriForFile(currentActivity, authority, file_obj)
+            except:
+                # Fallback for older Android
+                uri = Uri.fromFile(file_obj)
+            
+            # Determine MIME type
+            mime_type = "video/*" if filepath.endswith('.mp4') else "audio/*"
+            
+            # Create share intent
+            intent = Intent(Intent.ACTION_SEND)
+            intent.setType(mime_type)
+            intent.putExtra(Intent.EXTRA_STREAM, uri)
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            
+            # Create chooser
+            chooser = Intent.createChooser(intent, cast('java.lang.CharSequence', String("Share via")))
+            currentActivity.startActivity(chooser)
+            
+            print(f"[✓] Share intent launched for: {filepath}")
+        
+        except Exception as e:
+            print(f"[!] Share error: {e}")
+            import traceback
+            traceback.print_exc()
+            self.show_toast("Failed to share file")
+    
+    def rename_file(self, old_filename, old_filepath):
+        """Show compact rename dialog"""
+        from kivymd.uix.textfield import MDTextField
+        from kivymd.uix.boxlayout import MDBoxLayout
+        
+        # Create compact text field container
+        content = MDBoxLayout(
+            orientation="vertical",
+            adaptive_height=True,
+            padding=["10dp", "5dp"],
+            spacing="10dp"
+        )
+        
+        # Create text field
+        text_field = MDTextField(
+            text=old_filename,
+            hint_text="Enter new filename",
+            font_name="Roboto",
+            mode="rectangle",
+            size_hint_x=1,
+            multiline=False
+        )
+        
+        content.add_widget(text_field)
+        
+        # Create compact dialog
+        dialog = MDDialog(
+            title="Rename File",
+            type="custom",
+            content_cls=content,
+            size_hint=(0.8, None),
+            md_bg_color=(0.1, 0.1, 0.1, 1),
+            radius=[20, 20, 20, 20],
+            buttons=[
+                MDFlatButton(
+                    text="CANCEL",
+                    font_name="Roboto",
+                    theme_text_color="Custom",
+                    text_color=(0.5, 0.5, 0.5, 1),
+                    on_release=lambda x: dialog.dismiss()
+                ),
+                MDFlatButton(
+                    text="RENAME",
+                    font_name="Roboto",
+                    theme_text_color="Custom",
+                    text_color=(0, 0.82, 0.63, 1),
+                    on_release=lambda x: self._confirm_rename(old_filepath, text_field.text, dialog)
+                )
+            ]
+        )
+        
+        # Apply title font
+        dialog.ids.title.font_name = "Roboto"
+        dialog.ids.title.theme_text_color = "Custom"
+        dialog.ids.title.text_color = (1, 1, 1, 1)
+        
+        dialog.open()
+    
+    def _confirm_rename(self, old_filepath, new_filename, dialog):
+        """Execute rename operation"""
+        dialog.dismiss()
+        
+        try:
+            old_path = Path(old_filepath)
+            
+            # Validate new filename
+            if not new_filename or new_filename.strip() == "":
+                self.show_toast("Filename cannot be empty")
+                return
+            
+            # Sanitize filename
+            new_filename = new_filename.strip()
+            
+            # Keep original extension
+            if not new_filename.endswith(old_path.suffix):
+                new_filename += old_path.suffix
+            
+            # Create new path
+            new_path = old_path.parent / new_filename
+            
+            # Check if file exists
+            if not old_path.exists():
+                self.show_toast("Original file not found")
+                self.db.delete_media(old_filepath)
                 self.refresh_library()
+                return
+            
+            # Check if new name already exists
+            if new_path.exists() and new_path != old_path:
+                self.show_toast("File with this name already exists")
+                return
+            
+            # Rename physical file
+            old_path.rename(new_path)
+            
+            # Update database
+            self.db.update_media_path(str(old_path), str(new_path))
+            
+            # Refresh library
+            self.refresh_library()
+            
+            self.show_toast(f"✓ Renamed to {new_filename}")
+            print(f"[✓] File renamed: {old_path} -> {new_path}")
+        
+        except Exception as e:
+            print(f"[!] Rename error: {e}")
+            import traceback
+            traceback.print_exc()
+            self.show_toast("Failed to rename file")
+    
+    def show_details(self, filepath):
+        """Show compact file details dialog"""
+        try:
+            # Get media info from database
+            media = self.db.get_media_by_path(filepath)
+            
+            if not media:
+                self.show_toast("File details not found")
+                return
+            
+            # Check if file exists
+            file_path = Path(filepath)
+            file_exists = file_path.exists()
+            
+            # Format size
+            size_mb = media['size_bytes'] / (1024 * 1024) if media['size_bytes'] else 0
+            size_str = f"{size_mb:.2f} MB"
+            
+            # Format date
+            try:
+                date_obj = datetime.fromisoformat(media['download_date'])
+                date_str = date_obj.strftime("%Y-%m-%d %H:%M")
+            except:
+                date_str = media['download_date']
+            
+            # Build compact details text
+            details = f"""Type: {media['file_type'].upper()}
+Format: {media['format'] or 'Unknown'}
+Quality: {media['quality'] or 'Unknown'}
+Size: {size_str}
+Date: {date_str}
+Status: {'✓ Exists' if file_exists else '✗ Missing'}"""
+            
+            # Create compact dialog
+            dialog = MDDialog(
+                title=media['filename'],
+                text=details,
+                size_hint=(0.8, None),
+                md_bg_color=(0.1, 0.1, 0.1, 1),
+                radius=[20, 20, 20, 20],
+                buttons=[
+                    MDFlatButton(
+                        text="CLOSE",
+                        font_name="Roboto",
+                        theme_text_color="Custom",
+                        text_color=(0, 0.82, 0.63, 1),
+                        on_release=lambda x: dialog.dismiss()
+                    )
+                ]
+            )
+            
+            # Apply fonts
+            dialog.ids.title.font_name = "Roboto"
+            dialog.ids.title.theme_text_color = "Custom"
+            dialog.ids.title.text_color = (1, 1, 1, 1)
+            dialog.ids.text.font_name = "Roboto"
+            dialog.ids.text.theme_text_color = "Custom"
+            dialog.ids.text.text_color = (0.85, 0.85, 0.85, 1)
+            
+            dialog.open()
+        
+        except Exception as e:
+            print(f"[!] Show details error: {e}")
+            import traceback
+            traceback.print_exc()
+            self.show_toast("Failed to load details")
+    
+    def delete_file(self, filename, filepath):
+        """Show compact delete confirmation dialog"""
+        dialog = MDDialog(
+            title="Delete File?",
+            text=f"Are you sure you want to delete:\n{filename}\n\nThis cannot be undone.",
+            size_hint=(0.8, None),
+            md_bg_color=(0.1, 0.1, 0.1, 1),
+            radius=[20, 20, 20, 20],
+            buttons=[
+                MDFlatButton(
+                    text="CANCEL",
+                    font_name="Roboto",
+                    theme_text_color="Custom",
+                    text_color=(0.5, 0.5, 0.5, 1),
+                    on_release=lambda x: dialog.dismiss()
+                ),
+                MDFlatButton(
+                    text="DELETE",
+                    font_name="Roboto",
+                    theme_text_color="Custom",
+                    text_color=(0.8, 0.2, 0.2, 1),
+                    on_release=lambda x: self._confirm_delete(filepath, dialog)
+                )
+            ]
+        )
+        
+        # Apply fonts
+        dialog.ids.title.font_name = "Roboto"
+        dialog.ids.title.theme_text_color = "Custom"
+        dialog.ids.title.text_color = (1, 1, 1, 1)
+        dialog.ids.text.font_name = "Roboto"
+        dialog.ids.text.theme_text_color = "Custom"
+        dialog.ids.text.text_color = (0.85, 0.85, 0.85, 1)
+        
+        dialog.open()
+    
+    def _confirm_delete(self, filepath, dialog):
+        """Execute delete operation"""
+        dialog.dismiss()
+        
+        try:
+            file_path = Path(filepath)
+            
+            # Get media info for thumbnail
+            media = self.db.get_media_by_path(filepath)
+            
+            # Delete physical file
+            if file_path.exists():
+                file_path.unlink()
+                print(f"[✓] File deleted: {filepath}")
+            else:
+                print(f"[!] File not found: {filepath}")
+            
+            # Delete thumbnail if exists
+            if media and media['thumbnail_path']:
+                thumb_path = Path(media['thumbnail_path'])
+                if thumb_path.exists():
+                    thumb_path.unlink()
+                    print(f"[✓] Thumbnail deleted: {media['thumbnail_path']}")
+            
+            # Delete from database
+            self.db.delete_media(filepath)
+            
+            # Refresh library
+            self.refresh_library()
+            
+            self.show_toast("✓ File deleted")
+        
         except Exception as e:
             print(f"[!] Delete error: {e}")
-
-    # সিকিউরিটি প্রশ্ন সেটআপ (প্রথমবার PIN সেট করার সময়)
-    def show_security_questions_setup(self):
-        self.sq_view = ModalView(size_hint=(0.9, None), height="500dp", background_color=(0,0,0,0.8))
-        card = MDCard(orientation="vertical", padding="20dp", spacing="15dp", radius=20, md_bg_color=(0.1, 0.1, 0.1, 1))
-        
-        card.add_widget(MDLabel(text="Setup Security Questions", style="TitleMedium", theme_text_color="Custom", text_color=(0, 0.8, 0.7, 1), size_hint_y=None, height="30dp"))
-        card.add_widget(MDLabel(text="Select 3 questions and provide answers for PIN recovery", style="BodySmall", theme_text_color="Secondary", size_hint_y=None, height="40dp"))
-        
-        scroll = MDScrollView(size_hint_y=0.7)
-        content = MDBoxLayout(orientation="vertical", spacing="10dp", adaptive_height=True, padding="5dp")
-        
-        self.sq_fields = []
-        for i in range(3):
-            content.add_widget(MDLabel(text=f"Question {i+1}: {self.security_questions[i]}", style="BodySmall", size_hint_y=None, height="25dp"))
-            field = MDTextField(hint_text=f"Answer {i+1}", mode="outlined")
-            content.add_widget(field)
-            self.sq_fields.append((self.security_questions[i], field))
-        
-        scroll.add_widget(content)
-        card.add_widget(scroll)
-        
-        btn = MDButton(style="filled", on_release=lambda x: self._save_security_setup(), pos_hint={"center_x": .5})
-        btn.add_widget(MDButtonText(text="Save & Continue"))
-        card.add_widget(btn)
-        
-        self.sq_view.add_widget(card)
-        self.sq_view.open()
-
-    def _save_security_setup(self):
-        qa_list = [(q, f.text) for q, f in self.sq_fields]
-        if any(not a.strip() for _, a in qa_list):
-            self.show_toast("Please answer all questions")
-            return
-        
-        db.save_security_questions(qa_list)
-        db.set_pin(self.current_pin)
-        self.sq_view.dismiss()
-        self.root.ids.vault_msg.text = "PIN & Security Setup Complete!"
-        self.current_pin = ""
-        self.root.ids.pin_display.text = ""
-        self.show_toast("Security setup successful!")
-
-    # Forgot PIN - সিকিউরিটি প্রশ্ন যাচাই
-    def show_forgot_pin_dialog(self):
-        if not db.has_security_questions():
-            self.show_toast("No recovery questions set")
-            return
-        
-        questions = db.get_security_questions()
-        self.recovery_view = ModalView(size_hint=(0.9, None), height="450dp", background_color=(0,0,0,0.8))
-        card = MDCard(orientation="vertical", padding="20dp", spacing="15dp", radius=20, md_bg_color=(0.1, 0.1, 0.1, 1))
-        
-        card.add_widget(MDLabel(text="PIN Recovery", style="TitleMedium", theme_text_color="Custom", text_color=(0, 0.8, 0.7, 1), size_hint_y=None, height="30dp"))
-        card.add_widget(MDLabel(text="Answer your security questions", style="BodySmall", theme_text_color="Secondary", size_hint_y=None, height="30dp"))
-        
-        scroll = MDScrollView(size_hint_y=0.65)
-        content = MDBoxLayout(orientation="vertical", spacing="10dp", adaptive_height=True, padding="5dp")
-        
-        self.recovery_fields = []
-        for i, q in enumerate(questions):
-            content.add_widget(MDLabel(text=f"Q{i+1}: {q}", style="BodySmall", size_hint_y=None, height="30dp"))
-            field = MDTextField(hint_text=f"Answer {i+1}", mode="outlined")
-            content.add_widget(field)
-            self.recovery_fields.append(field)
-        
-        scroll.add_widget(content)
-        card.add_widget(scroll)
-        
-        btn_box = MDBoxLayout(orientation="horizontal", spacing="10dp", size_hint_y=None, height="40dp")
-        btn_cancel = MDButton(style="outlined", on_release=lambda x: self.recovery_view.dismiss())
-        btn_cancel.add_widget(MDButtonText(text="Cancel"))
-        btn_verify = MDButton(style="filled", on_release=lambda x: self._verify_recovery())
-        btn_verify.add_widget(MDButtonText(text="Verify"))
-        btn_box.add_widget(btn_cancel)
-        btn_box.add_widget(btn_verify)
-        card.add_widget(btn_box)
-        
-        self.recovery_view.add_widget(card)
-        self.recovery_view.open()
-
-    def _verify_recovery(self):
-        answers = [f.text for f in self.recovery_fields]
-        if db.verify_security_questions(answers):
-            self.recovery_view.dismiss()
-            self.show_toast("Verification successful! Set new PIN")
-            self.root.ids.vault_msg.text = "Enter New PIN"
-            self.current_pin = ""
-            self.root.ids.pin_display.text = ""
-            # PIN রিসেট করার জন্য ডাটাবেস থেকে পুরনো PIN মুছে দাও
-            db.cursor.execute("DELETE FROM settings WHERE key='vault_pin'")
-            db.conn.commit()
-        else:
-            self.show_toast("Wrong answers! Try again")
-
-    # ফাইল মুভ করার আগে PIN যাচাই
-    def verify_before_move(self, filepath, filename):
-        if not db.is_pin_set():
-            self.show_toast("Please set a PIN first in Vault")
-            return
-        
-        self.current_action = "MOVING_FILE"
-        self.pending_file_move = {"filepath": filepath, "filename": filename}
-        self.root.ids.screen_manager.current = "vault"
-        self.root.ids.vault_msg.text = "Enter PIN to move file"
-
-    def _execute_vault_move(self):
-        filepath = self.pending_file_move["filepath"]
-        filename = self.pending_file_move["filename"]
-        
+            import traceback
+            traceback.print_exc()
+            self.show_toast("Failed to delete file")
+    
+    # ═══════════════════════════════════════════════════════════════════════
+    # UTILITIES
+    # ═══════════════════════════════════════════════════════════════════════
+    def show_toast(self, message):
+        """Show toast notification"""
+        print(f"[TOAST] {message}")
         try:
-            vault_dir = os.path.join(self.base_path, "Vault")
-            os.makedirs(vault_dir, exist_ok=True)
-            new_path = os.path.join(vault_dir, filename)
-            
-            # ফাইল মুভ করো (ডিলিট নয়, মুভ)
-            os.rename(filepath, new_path)
-            
-            # ডাটাবেসে রেকর্ড রাখো
-            file_type = "video" if filepath.lower().endswith(('.mp4', '.mkv', '.webm')) else "audio"
-            db.add_to_vault(filename, new_path, file_type)
-            
-            self.show_toast("File moved to Vault successfully")
-            self.refresh_library()
-            self.current_action = ""
-            self.pending_file_move = {"filepath": "", "filename": ""}
+            if platform == 'android':
+                kivymd_toast(message)
+            else:
+                # Desktop fallback
+                kivymd_toast(message)
         except Exception as e:
-            self.show_toast("Failed to move file")
-            print(f"[!] Vault move error: {e}")
-            
-    def update_pin(self, new_pin):
-        """ভল্ট আনলক থাকা অবস্থায় পিন আপডেট করার ফিচার"""
-        db.set_pin(new_pin)
-        self.show_toast("PIN Updated Successfully!")
-
-    def show_forgot_pin_dialog(self):
-        """Forgot PIN ক্লিক করলে কি করতে হবে তা এখানে লিখুন"""
-        self.show_toast("Contact Admin to reset PIN!")
+            print(f"[!] Toast error: {e}")
 
 
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ENTRY POINT
+# ═══════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     AnyLoadApp().run()

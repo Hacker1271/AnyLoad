@@ -1,32 +1,36 @@
-Kivy==2.3.1
-https://github.com/kivymd/KivyMD/archive/master.zip
-yt-dlp
-pytube
-mutagen
-Pillow
-certifi
-urllib3
-idna
-charset-normalizer
-cython
+# ═══════════════════════════════════════════════════════════════════════════
+# ANYLOAD V1.1 - PYTHON DEPENDENCIES (PRODUCTION)
+# ═══════════════════════════════════════════════════════════════════════════
 
-# --- Kivy Framework & UI ---
-Kivy==2.3.1
-https://github.com/kivymd/KivyMD/archive/master.zip
+# ───────────────────────────────────────────────────────────────────────────
+# KIVY FRAMEWORK (CRITICAL: Exact versions)
+# ───────────────────────────────────────────────────────────────────────────
+Kivy==2.3.0
+kivymd==1.2.0
 
-# --- Core Download Engines ---
-yt-dlp
-pytube
+# ───────────────────────────────────────────────────────────────────────────
+# DOWNLOAD ENGINES
+# ───────────────────────────────────────────────────────────────────────────
+yt-dlp>=2023.10.13
+requests>=2.31.0
+certifi>=2023.7.22
+urllib3>=2.0.7
 
-# --- Media Processing & Metadata ---
-mutagen
-Pillow
+# ───────────────────────────────────────────────────────────────────────────
+# MEDIA PROCESSING
+# ───────────────────────────────────────────────────────────────────────────
+mutagen>=1.47.0
+Pillow>=10.0.0
 
-# --- Networking & Security ---
-certifi
-urllib3
-idna
-charset-normalizer
+# ───────────────────────────────────────────────────────────────────────────
+# UTILITIES
+# ───────────────────────────────────────────────────────────────────────────
+charset-normalizer>=3.3.0
+idna>=3.4
 
-# (Note: 'pyjnius' is omitted here because it causes errors on Linux/PC. 
-# Buildozer will automatically install it for Android during the build process.)
+# ───────────────────────────────────────────────────────────────────────────
+# NOTES
+# ───────────────────────────────────────────────────────────────────────────
+# - pyjnius: Auto-installed by Buildozer for Android (DO NOT add here)
+# - sqlite3: Built-in Python module
+# - libffi, openssl: System libraries (specified in buildozer.spec)
