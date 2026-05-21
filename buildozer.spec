@@ -36,8 +36,7 @@ version = 1.1.0
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-requirements = python3,kivy==2.3.0,kivymd==1.2.0,pillow,requests,certifi,urllib3,charset-normalizer,idna,pyjnius,android,yt-dlp,mutagen,websockets,brotli,pycryptodomex
-
+requirements = python3, kivy==2.3.0, kivymd==1.2.0, pyjnius, requests, certifi, yt-dlp, sqlite3, libffi, openssl
 # (str) Custom source folders for requirements
 # Sets custom source for any requirements with recipes
 # requirements.source.kivy = ../../kivy
