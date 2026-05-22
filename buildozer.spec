@@ -1,78 +1,81 @@
 [app]
 
-# App title and package name
+# (str) Title of your application
 title = AnyLoad
+
+# (str) Package name
 package.name = anyload
-package.domain = com.anyload
 
-# Source code directory
+# (str) Package domain (needed for android/ios packaging)
+package.domain = com.hacker1271
+
+# (str) Source code where the main.py live
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas
 
-# App version
-version = 1.1
+# (list) Source files to include (let empty to include all the files)
+source.include_exts = py, png, jpg, kv, ttf
 
-# Requirements - STRICTLY KivyMD 1.2.0
-requirements = python3,kivy==2.3.0,kivymd==1.2.0,pyjnius,android,requests,certifi,yt-dlp,sqlite3,libffi,openssl
+# (str) Application versioning (method 1)
+version = 1.1.0
 
-# Permissions for Android 11-13+
-android.permissions = INTERNET,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE,MANAGE_EXTERNAL_STORAGE,READ_MEDIA_VIDEO,READ_MEDIA_AUDIO,POST_NOTIFICATIONS,ACCESS_NETWORK_STATE,WAKE_LOCK
+# (list) Application requirements
+# comma separated e.g. requirements = sqlite3,kivy
+requirements = python3, kivy==2.3.0, kivymd==1.2.0, pyjnius, requests, certifi, yt-dlp, sqlite3, libffi, openssl
 
-# Android API and NDK
-android.api = 33
-android.minapi = 21
-android.ndk = 25b
+# (str) Presplash of the application
+presplash.filename = %(source.dir)s/assets/logo.png
 
-# Architectures (includes 32-bit for budget devices)
-android.archs = arm64-v8a,armeabi-v7a
+# (str) Icon of the application
+icon.filename = %(source.dir)s/assets/logo.png
 
-# App icon and presplash
-#icon.filename = %(source.dir)s/assets/logo.png
-#presplash.filename = %(source.dir)s/assets/logo.png
-
-# Orientation
+# (str) Supported orientation (landscape, portrait or all)
 orientation = portrait
 
-# Services
-#services = DownloadService:service.py
+# (list) Permissions
+android.permissions = INTERNET, READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE, MANAGE_EXTERNAL_STORAGE, READ_MEDIA_VIDEO, READ_MEDIA_AUDIO, POST_NOTIFICATIONS
 
-# Android features
-android.features = android.hardware.touchscreen
+# (int) Target Android API, should be as high as possible.
+android.api = 33
 
-# Gradle dependencies
-android.gradle_dependencies = 
+# (int) Minimum API your APK / AAB will support.
+android.minapi = 21
 
-# Java options
-android.add_jars = 
+# (str) Android NDK version to use
+android.ndk = 25b
 
-# Android manifest
-android.manifest.intent_filters = 
-
-# Wakelock to prevent sleep during downloads
-android.wakelock = True
-
-# Logcat filters
-android.logcat_filters = *:S python:D
-
-# Copy library instead of symlinking
-android.copy_libs = 1
-
-# Skip update of included dependencies
+# (bool) If True, then skip trying to update the Android sdk
+# This can be useful to avoid network timeouts or macos fixes
 android.skip_update = False
 
-# Don't copy __pycache__
-android.no_byte_compile_python = True
+# (bool) If True, then automatically accept SDK license
+# agreements. This is intended for automation only.
+android.accept_sdk_license = True
+
+# (str) Android entry point, default is ok for Kivy-based app
+android.entrypoint = org.kivy.android.PythonActivity
+
+# (list) The Android architectures to build for, choices: armeabi-v7a, arm64-v8a, x86, x86_64
+android.archs = arm64-v8a, armeabi-v7a
+
+# (bool) enables Android auto backup feature (Android API >=23)
+android.allow_backup = True
+
+# (str) The format used to package the app for release mode (aab or apk or aar).
+android.release_artifact = apk
+
+# (str) The format used to package the app for debug mode (apk or aar).
+android.debug_artifact = apk
+
+# (str) Presplash background color (for android toolchain)
+android.presplash_color = #0D0D0D
+
+# (str) Bootstrap to use for android builds
+p4a.bootstrap = sdl2
 
 [buildozer]
 
-# Log level (0 = error only, 1 = info, 2 = debug)
+# (int) Log level (0 = error only, 1 = info, 2 = debug (with command output))
 log_level = 2
 
-# Display warning if buildozer is run as root
+# (int) Display warning if buildozer is run as root (0 = False, 1 = True)
 warn_on_root = 1
-
-# Build directory
-build_dir = ./.buildozer
-
-# Binary directory
-bin_dir = ./bin
