@@ -20,7 +20,8 @@ version = 1.1.0
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
-requirements = python3==3.13.13, kivy==2.3.0, kivymd==1.2.0, pyjnius, requests, certifi, yt-dlp, sqlite3, libffi, openssl
+# CRITICAL: Python version must match hostpython3 version from p4a
+requirements = python3==3.13.13, kivy==2.3.0, kivymd==1.2.0, pyjnius, requests, certifi, yt-dlp, six, chardet, urllib3, filetype, sqlite3, libffi, openssl
 
 # (str) Presplash of the application
 presplash.filename = %(source.dir)s/assets/logo.png
@@ -71,6 +72,15 @@ android.presplash_color = #0D0D0D
 
 # (str) Bootstrap to use for android builds
 p4a.bootstrap = sdl2
+
+# (bool) Enable NDK API compatibility
+android.ndk_api = 21
+
+# (bool) Use legacy build system if needed
+p4a.source_dir = 
+
+# (str) Gradle dependencies
+android.gradle_dependencies = 
 
 [buildozer]
 
