@@ -18,17 +18,24 @@ jobs:
       with:
         python-version: '3.11'
     
+    # 🎯 এই সেই ম্যাজিক স্টেপ যা Java 17 নিশ্চিত করবে!
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+    
     - name: Install System Dependencies
       run: |
         sudo apt-get update || true
-        sudo apt-get install -y --fix-missing build-essential git zip unzip autoconf automake libtool pkg-config cmake libffi-dev libssl-dev libltdl-dev zlib1g-dev
+        sudo apt-get install -y build-essential git zip unzip autoconf automake libtool pkg-config cmake libffi-dev libssl-dev libltdl-dev zlib1g-dev
     
-    - name: Install Python Dependencies
+    - name: Install Python Dependencies & Buildozer
       run: |
         python -m pip install --upgrade pip setuptools wheel
         pip install Cython==0.29.33 virtualenv buildozer
     
-    - name: Clear cache and SDK
+    - name: Clear cache and SDK (Fixing Environment)
       run: |
         rm -rf .buildozer
         rm -rf ~/.buildozer
@@ -47,3 +54,4 @@ jobs:
       with:
         name: AnyLoad-APK
         path: bin/*.apk
+        retention-days: 30
