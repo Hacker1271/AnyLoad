@@ -55,7 +55,7 @@ android.accept_sdk_license = True
 android.entrypoint = org.kivy.android.PythonActivity
 
 # (list) The Android architectures to build for, choices: armeabi-v7a, arm64-v8a, x86, x86_64
-android.archs = arm64-v8a, armeabi-v7a
+android.archs = arm64-v8a
 
 # (bool) enables Android auto backup feature (Android API >=23)
 android.allow_backup = True
