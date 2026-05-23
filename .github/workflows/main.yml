@@ -2,55 +2,26 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    
+    runs-on: ubuntu-22.04
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-    
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '17'
-    
-    - name: Install System Dependencies (Bypassing Errors)
-      run: |
-        sudo apt-get update || true
-        sudo apt-get install -y --fix-missing build-essential git zip unzip autoconf automake libtool pkg-config cmake libffi-dev libssl-dev libltdl-dev zlib1g-dev
-    
-    - name: Install Python Dependencies & Buildozer
-      run: |
-        python -m pip install --upgrade pip setuptools wheel
-        pip install Cython==0.29.33 virtualenv buildozer
-    
-    - name: Clear buildozer cache & Fix SDK (Fresh Build)
-      run: |
-        rm -rf .buildozer
-        rm -rf ~/.buildozer
-        unset ANDROID_HOME
-        unset ANDROID_SDK_ROOT
-        unset ANDROID_NDK_HOME
-    
-    - name: Build APK with Buildozer
-      run: |
-        unset ANDROID_HOME
-        unset ANDROID_SDK_ROOT
-        yes | buildozer -v android debug
-    
-    - name: Upload APK artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: AnyLoad-APK
-        path: bin/*.apk
-        retention-days: 30
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build with Buildozer Container
+        uses: ArtemSbuld/buildozer-action@v2
+        id: buildozer
+        with:
+          command: buildozer android debug
+          buildozer_version: master
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AnyLoad-Final-APK
+          path: ${{ steps.buildozer.outputs.filename }}
